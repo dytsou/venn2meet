@@ -7,9 +7,52 @@
     <link rel="stylesheet" href="/css/app.css" />
   </head>
   <body>
-    <main class="shell">
-      <h1>Venn2Meet</h1>
-      <p>Anonymous scheduling for small groups.</p>
+    <main class="shell landing-shell">
+      <header class="hero">
+        <p class="eyebrow">Anonymous group scheduling</p>
+        <h1>Venn2Meet</h1>
+        <p class="hero-copy">Find overlap without exposing individual calendars.</p>
+      </header>
+
+      <form id="create-event-form" class="create-form">
+        <label>
+          Event title
+          <input name="title" required placeholder="Team planning" maxlength="80" />
+        </label>
+
+        <label>
+          Timezone
+          <input name="timezone" required placeholder="Asia/Taipei" />
+        </label>
+
+        <div class="inline-fields">
+          <label>
+            Start
+            <input type="datetime-local" name="startIso" required />
+          </label>
+          <label>
+            End
+            <input type="datetime-local" name="endIso" required />
+          </label>
+        </div>
+
+        <label>
+          Granularity
+          <select name="granularityMinutes">
+            <option value="15">15 minutes</option>
+            <option value="30">30 minutes</option>
+            <option value="60" selected>60 minutes</option>
+          </select>
+        </label>
+
+        <button type="submit">Create event</button>
+        <p id="create-error" class="error-text" aria-live="polite"></p>
+      </form>
     </main>
+
+    <script type="module">
+      import { mountCreateForm } from "/js/create-form.js";
+      mountCreateForm();
+    </script>
   </body>
 </html>

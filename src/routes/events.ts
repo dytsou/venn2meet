@@ -55,7 +55,8 @@ export async function createEventRoute(c: Context<Env>) {
   return c.json(
     {
       url: `/e/${event.publicToken}`,
-      token: event.publicToken
+      token: event.publicToken,
+      slotCount: event.slotCount
     },
     201
   );

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { createEventRoute } from "./routes/events";
 import { createGridRoute } from "./routes/grid";
 import { createAvailabilityRoute } from "./routes/availability";
+import { eventPageRoute } from "./routes/pages";
 
 export type Env = {
   Bindings: {
@@ -22,3 +23,4 @@ app.get("/api/health", (c) => {
 app.post("/api/events", createEventRoute);
 app.get("/api/events/:token/grid", createGridRoute);
 app.patch("/api/events/:token/availability", createAvailabilityRoute);
+app.get("/e/:token", eventPageRoute);
