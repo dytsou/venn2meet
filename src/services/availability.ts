@@ -61,9 +61,20 @@ export async function applyAvailabilityDiff(args: {
     slotCount
   });
 
+  const existingRows = await db
+    .prepare(
+      "SELECT slot_index FROM availability WHERE event_id = ? AND participant_id = ? ORDER BY slot_index ASC"
+    )
+    .bind(eventId, participantId)
+    .all<{ slot_index: number }>();
+
+  const existingSlots = new Set((existingRows.results ?? []).map((row) => row.slot_index));
+  const selectNew = select.filter((slot) => !existingSlots.has(slot));
+  const deselectExisting = deselect.filter((slot) => existingSlots.has(slot));
+
   const statements: D1PreparedStatement[] = [];
 
-  for (const slot of select) {
+  for (const slot of selectNew) {
     statements.push(
       db
         .prepare(
@@ -85,7 +96,7 @@ export async function applyAvailabilityDiff(args: {
     );
   }
 
-  for (const slot of deselect) {
+  for (const slot of deselectExisting) {
     statements.push(
       db
         .prepare("DELETE FROM availability WHERE event_id = ? AND participant_id = ? AND slot_index = ?")

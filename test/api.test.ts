@@ -57,23 +57,24 @@ function parseCookie(response: Response): string | null {
 }
 
 async function createEvent(env: TestEnv): Promise<{ token: string; cookie: string }> {
-  const response = await apiRequest({
-    env,
-    path: "/api/events",
-    method: "POST",
-    body: {
+    const response = await apiRequest({
+      env,
+      path: "/api/events",
+      method: "POST",
+      body: {
       title: "Team Sync",
       timezone: "UTC",
-      startIso: "2026-06-01T00:00:00.000Z",
-      endIso: "2026-06-02T00:00:00.000Z",
-      granularityMinutes: 60
-    }
-  });
+        startIso: "2026-06-01T00:00:00.000Z",
+        endIso: "2026-06-02T00:00:00.000Z",
+        granularityMinutes: 60
+      }
+    });
 
   expect(response.status).toBe(201);
-  const body = (await response.json()) as { token: string; url: string };
-  const cookie = parseCookie(response);
-  expect(cookie).toBeTruthy();
+    const body = (await response.json()) as { token: string; url: string; slotCount: number };
+    const cookie = parseCookie(response);
+    expect(cookie).toBeTruthy();
+    expect(body.slotCount).toBe(24);
 
   return { token: body.token, cookie: cookie as string };
 }
