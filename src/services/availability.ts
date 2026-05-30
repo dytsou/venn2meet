@@ -1,7 +1,10 @@
 import { assertSlotIndexInRange } from "../lib/slots";
 
 export const DB_PARAMETER_LIMIT = 100;
-export const AVAILABILITY_DIFF_CHUNK_SIZE = 50;
+const SELECT_PARAMS_PER_SLOT = 5;
+const DESELECT_PARAMS_PER_SLOT = 7;
+export const AVAILABILITY_SELECT_CHUNK_SIZE = Math.floor(DB_PARAMETER_LIMIT / SELECT_PARAMS_PER_SLOT);
+export const AVAILABILITY_DESELECT_CHUNK_SIZE = Math.floor(DB_PARAMETER_LIMIT / DESELECT_PARAMS_PER_SLOT);
 
 export type AvailabilityDiffInput = {
   select: number[];
@@ -72,50 +75,56 @@ export async function applyAvailabilityDiff(args: {
   const selectNew = select.filter((slot) => !existingSlots.has(slot));
   const deselectExisting = deselect.filter((slot) => existingSlots.has(slot));
 
-  const statements: D1PreparedStatement[] = [];
-
-  for (const slot of selectNew) {
-    statements.push(
-      db
-        .prepare(
-          [
-            "INSERT OR IGNORE INTO availability (event_id, participant_id, slot_index)",
-            "VALUES (?, ?, ?)"
-          ].join(" ")
-        )
-        .bind(eventId, participantId, slot),
-      db
-        .prepare(
-          [
-            "INSERT INTO slot_counts (event_id, slot_index, count)",
-            "VALUES (?, ?, 1)",
-            "ON CONFLICT(event_id, slot_index) DO UPDATE SET count = count + 1"
-          ].join(" ")
-        )
-        .bind(eventId, slot)
-    );
+  for (const selectChunk of chunkArray(selectNew, AVAILABILITY_SELECT_CHUNK_SIZE)) {
+    const statements: D1PreparedStatement[] = [];
+    for (const slot of selectChunk) {
+      statements.push(
+        db
+          .prepare(
+            [
+              "INSERT OR IGNORE INTO availability (event_id, participant_id, slot_index)",
+              "VALUES (?, ?, ?)"
+            ].join(" ")
+          )
+          .bind(eventId, participantId, slot),
+        db
+          .prepare(
+            [
+              "INSERT INTO slot_counts (event_id, slot_index, count)",
+              "VALUES (?, ?, 1)",
+              "ON CONFLICT(event_id, slot_index) DO UPDATE SET count = count + 1"
+            ].join(" ")
+          )
+          .bind(eventId, slot)
+      );
+    }
+    if (statements.length > 0) {
+      await db.batch(statements);
+    }
   }
 
-  for (const slot of deselectExisting) {
-    statements.push(
-      db
-        .prepare("DELETE FROM availability WHERE event_id = ? AND participant_id = ? AND slot_index = ?")
-        .bind(eventId, participantId, slot),
-      db
-        .prepare(
-          [
-            "UPDATE slot_counts SET count = CASE WHEN count > 0 THEN count - 1 ELSE 0 END",
-            "WHERE event_id = ? AND slot_index = ?"
-          ].join(" ")
-        )
-        .bind(eventId, slot),
-      db.prepare("DELETE FROM slot_counts WHERE event_id = ? AND slot_index = ? AND count <= 0").bind(eventId, slot)
-    );
-  }
-
-  for (const chunk of chunkStatements(statements)) {
-    if (chunk.length > 0) {
-      await db.batch(chunk);
+  for (const deselectChunk of chunkArray(deselectExisting, AVAILABILITY_DESELECT_CHUNK_SIZE)) {
+    const statements: D1PreparedStatement[] = [];
+    for (const slot of deselectChunk) {
+      statements.push(
+        db
+          .prepare("DELETE FROM availability WHERE event_id = ? AND participant_id = ? AND slot_index = ?")
+          .bind(eventId, participantId, slot),
+        db
+          .prepare(
+            [
+              "UPDATE slot_counts SET count = CASE WHEN count > 0 THEN count - 1 ELSE 0 END",
+              "WHERE event_id = ? AND slot_index = ?"
+            ].join(" ")
+          )
+          .bind(eventId, slot),
+        db
+          .prepare("DELETE FROM slot_counts WHERE event_id = ? AND slot_index = ? AND count <= 0")
+          .bind(eventId, slot)
+      );
+    }
+    if (statements.length > 0) {
+      await db.batch(statements);
     }
   }
 
@@ -132,12 +141,4 @@ export async function applyAvailabilityDiff(args: {
     )
     .bind(eventId, participantId, eventId, participantId)
     .run();
-}
-
-function chunkStatements(statements: D1PreparedStatement[]): D1PreparedStatement[][] {
-  const maxStatementsPerBatch = Math.floor(DB_PARAMETER_LIMIT / 2);
-  const chunkSize = Math.min(AVAILABILITY_DIFF_CHUNK_SIZE, maxStatementsPerBatch);
-  return chunkArray(statements.map((_, index) => index), chunkSize).map((indexChunk) =>
-    indexChunk.map((index) => statements[index])
-  );
 }
