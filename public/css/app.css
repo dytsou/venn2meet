@@ -1,0 +1,25 @@
+:root {
+  --bg: #f5f7fb;
+  --text: #101522;
+  --panel: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Work Sans", "Segoe UI", sans-serif;
+  background: radial-gradient(circle at top, #ffffff 0%, var(--bg) 55%);
+  color: var(--text);
+}
+
+.shell {
+  max-width: 720px;
+  margin: 10vh auto;
+  padding: 2rem;
+  background: var(--panel);
+  border-radius: 16px;
+  box-shadow: 0 8px 20px rgb(0 0 0 / 8%);
+}
