@@ -1,10 +1,10 @@
 import { assertSlotIndexInRange } from "../lib/slots";
 
 export const DB_PARAMETER_LIMIT = 100;
-const SELECT_PARAMS_PER_SLOT = 5;
-const DESELECT_PARAMS_PER_SLOT = 7;
-export const AVAILABILITY_SELECT_CHUNK_SIZE = Math.floor(DB_PARAMETER_LIMIT / SELECT_PARAMS_PER_SLOT);
-export const AVAILABILITY_DESELECT_CHUNK_SIZE = Math.floor(DB_PARAMETER_LIMIT / DESELECT_PARAMS_PER_SLOT);
+const SELECT_PARAMS_PER_SLOT = 9;
+const DESELECT_PARAMS_PER_SLOT = 9;
+const AVAILABILITY_SELECT_CHUNK_SIZE = Math.floor(DB_PARAMETER_LIMIT / SELECT_PARAMS_PER_SLOT);
+const AVAILABILITY_DESELECT_CHUNK_SIZE = Math.floor(DB_PARAMETER_LIMIT / DESELECT_PARAMS_PER_SLOT);
 
 export type AvailabilityDiffInput = {
   select: number[];
@@ -64,18 +64,7 @@ export async function applyAvailabilityDiff(args: {
     slotCount
   });
 
-  const existingRows = await db
-    .prepare(
-      "SELECT slot_index FROM availability WHERE event_id = ? AND participant_id = ? ORDER BY slot_index ASC"
-    )
-    .bind(eventId, participantId)
-    .all<{ slot_index: number }>();
-
-  const existingSlots = new Set((existingRows.results ?? []).map((row) => row.slot_index));
-  const selectNew = select.filter((slot) => !existingSlots.has(slot));
-  const deselectExisting = deselect.filter((slot) => existingSlots.has(slot));
-
-  for (const selectChunk of chunkArray(selectNew, AVAILABILITY_SELECT_CHUNK_SIZE)) {
+  for (const selectChunk of chunkArray(select, AVAILABILITY_SELECT_CHUNK_SIZE)) {
     const statements: D1PreparedStatement[] = [];
     for (const slot of selectChunk) {
       statements.push(
@@ -91,10 +80,13 @@ export async function applyAvailabilityDiff(args: {
           .prepare(
             [
               "INSERT INTO slot_counts (event_id, slot_index, count)",
-              "VALUES (?, ?, 1)",
-              "ON CONFLICT(event_id, slot_index) DO UPDATE SET count = count + 1"
+              "VALUES (?, ?, (SELECT COUNT(*) FROM availability WHERE event_id = ? AND slot_index = ?))",
+              "ON CONFLICT(event_id, slot_index) DO UPDATE SET count = excluded.count"
             ].join(" ")
           )
+          .bind(eventId, slot, eventId, slot),
+        db
+          .prepare("DELETE FROM slot_counts WHERE event_id = ? AND slot_index = ? AND count <= 0")
           .bind(eventId, slot)
       );
     }
@@ -103,7 +95,7 @@ export async function applyAvailabilityDiff(args: {
     }
   }
 
-  for (const deselectChunk of chunkArray(deselectExisting, AVAILABILITY_DESELECT_CHUNK_SIZE)) {
+  for (const deselectChunk of chunkArray(deselect, AVAILABILITY_DESELECT_CHUNK_SIZE)) {
     const statements: D1PreparedStatement[] = [];
     for (const slot of deselectChunk) {
       statements.push(
@@ -113,11 +105,12 @@ export async function applyAvailabilityDiff(args: {
         db
           .prepare(
             [
-              "UPDATE slot_counts SET count = CASE WHEN count > 0 THEN count - 1 ELSE 0 END",
-              "WHERE event_id = ? AND slot_index = ?"
+              "INSERT INTO slot_counts (event_id, slot_index, count)",
+              "VALUES (?, ?, (SELECT COUNT(*) FROM availability WHERE event_id = ? AND slot_index = ?))",
+              "ON CONFLICT(event_id, slot_index) DO UPDATE SET count = excluded.count"
             ].join(" ")
           )
-          .bind(eventId, slot),
+          .bind(eventId, slot, eventId, slot),
         db
           .prepare("DELETE FROM slot_counts WHERE event_id = ? AND slot_index = ? AND count <= 0")
           .bind(eventId, slot)

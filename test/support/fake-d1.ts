@@ -1,3 +1,5 @@
+import { DB_PARAMETER_LIMIT } from "../../src/services/availability";
+
 type EventRow = {
   id: number;
   public_token: string;
@@ -60,6 +62,10 @@ class FakeStatement {
     return this.runner().all<T>();
   }
 
+  getBindCount(): number {
+    return this.boundArgs.length;
+  }
+
   private runner(): Runner {
     return this.db.execute(this.sql, this.boundArgs);
   }
@@ -77,6 +83,14 @@ export class FakeD1Database {
   }
 
   async batch<T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]> {
+    const totalBindCount = (statements as unknown as FakeStatement[]).reduce(
+      (sum, statement) => sum + statement.getBindCount(),
+      0
+    );
+    if (totalBindCount > DB_PARAMETER_LIMIT) {
+      throw new Error(`Fake D1 parameter limit exceeded: ${totalBindCount}`);
+    }
+
     const results: D1Result<T>[] = [];
     for (const statement of statements as unknown as FakeStatement[]) {
       const result = await statement.run();
@@ -239,19 +253,22 @@ export class FakeD1Database {
 
     if (
       sql ===
-      "INSERT INTO slot_counts (event_id, slot_index, count) VALUES (?, ?, 1) ON CONFLICT(event_id, slot_index) DO UPDATE SET count = count + 1"
+      "INSERT INTO slot_counts (event_id, slot_index, count) VALUES (?, ?, (SELECT COUNT(*) FROM availability WHERE event_id = ? AND slot_index = ?)) ON CONFLICT(event_id, slot_index) DO UPDATE SET count = excluded.count"
     ) {
       return {
         run: async () => {
           const eventId = Number(args[0]);
           const slotIndex = Number(args[1]);
+          const count = this.availability.filter(
+            (row) => row.event_id === Number(args[2]) && row.slot_index === Number(args[3])
+          ).length;
           const existing = this.slotCounts.find(
             (row) => row.event_id === eventId && row.slot_index === slotIndex
           );
           if (existing) {
-            existing.count += 1;
+            existing.count = count;
           } else {
-            this.slotCounts.push({ event_id: eventId, slot_index: slotIndex, count: 1 });
+            this.slotCounts.push({ event_id: eventId, slot_index: slotIndex, count });
           }
           return { success: true } as D1Result;
         },
@@ -274,27 +291,6 @@ export class FakeD1Database {
           );
           if (index >= 0) {
             this.availability.splice(index, 1);
-          }
-          return { success: true } as D1Result;
-        },
-        first: async <T>() => null as T | null,
-        all: async <T>() => ({ success: true, results: [] as T[] }) as D1Result<T>
-      };
-    }
-
-    if (
-      sql ===
-      "UPDATE slot_counts SET count = CASE WHEN count > 0 THEN count - 1 ELSE 0 END WHERE event_id = ? AND slot_index = ?"
-    ) {
-      return {
-        run: async () => {
-          const eventId = Number(args[0]);
-          const slotIndex = Number(args[1]);
-          const existing = this.slotCounts.find(
-            (row) => row.event_id === eventId && row.slot_index === slotIndex
-          );
-          if (existing) {
-            existing.count = Math.max(0, existing.count - 1);
           }
           return { success: true } as D1Result;
         },

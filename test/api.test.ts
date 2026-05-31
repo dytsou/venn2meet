@@ -57,24 +57,24 @@ function parseCookie(response: Response): string | null {
 }
 
 async function createEvent(env: TestEnv): Promise<{ token: string; cookie: string }> {
-    const response = await apiRequest({
-      env,
-      path: "/api/events",
-      method: "POST",
-      body: {
+  const response = await apiRequest({
+    env,
+    path: "/api/events",
+    method: "POST",
+    body: {
       title: "Team Sync",
       timezone: "UTC",
-        startIso: "2026-06-01T00:00:00.000Z",
-        endIso: "2026-06-02T00:00:00.000Z",
-        granularityMinutes: 60
-      }
-    });
+      startIso: "2026-06-01T00:00:00.000Z",
+      endIso: "2026-06-02T00:00:00.000Z",
+      granularityMinutes: 60
+    }
+  });
 
   expect(response.status).toBe(201);
-    const body = (await response.json()) as { token: string; url: string; slotCount: number };
-    const cookie = parseCookie(response);
-    expect(cookie).toBeTruthy();
-    expect(body.slotCount).toBe(24);
+  const body = (await response.json()) as { token: string; url: string; slotCount: number };
+  const cookie = parseCookie(response);
+  expect(cookie).toBeTruthy();
+  expect(body.slotCount).toBe(24);
 
   return { token: body.token, cookie: cookie as string };
 }
@@ -109,8 +109,112 @@ describe("api", () => {
     });
 
     const payload = (await gridResponse.json()) as Record<string, unknown>;
+    expect(Object.keys(payload).sort()).toEqual(["mine", "n", "slots"]);
+    expect(Array.isArray(payload.slots)).toBe(true);
+    for (const slot of payload.slots as Array<Record<string, unknown>>) {
+      expect(Object.keys(slot).sort()).toEqual(["count", "i"]);
+    }
     expect(payload).not.toHaveProperty("participants");
     expect(JSON.stringify(payload)).not.toContain("participant_id");
+    expect(JSON.stringify(payload)).not.toContain("participantId");
+
+    const write = await apiRequest({
+      env,
+      path: `/api/events/${token}/availability`,
+      method: "PATCH",
+      cookie,
+      body: { select: [1], deselect: [] }
+    });
+    expect(write.status).toBe(200);
+
+    const populatedGridResponse = await apiRequest({
+      env,
+      path: `/api/events/${token}/grid`,
+      cookie
+    });
+    const populatedPayload = (await populatedGridResponse.json()) as Record<string, unknown>;
+    expect(Object.keys(populatedPayload).sort()).toEqual(["mine", "n", "slots"]);
+
+    for (const slot of populatedPayload.slots as Array<Record<string, unknown>>) {
+      expect(Object.keys(slot).sort()).toEqual(["count", "i"]);
+    }
+  });
+
+  it("keeps event-specific session cookie continuity across events", async () => {
+    const env = buildEnv();
+
+    const eventA = await createEvent(env);
+    const joinA = await apiRequest({
+      env,
+      path: `/api/events/${eventA.token}/grid`,
+      cookie: eventA.cookie
+    });
+    expect(joinA.status).toBe(200);
+
+    const createB = await apiRequest({
+      env,
+      path: "/api/events",
+      method: "POST",
+      cookie: eventA.cookie,
+      body: {
+        title: "Team Sync B",
+        timezone: "UTC",
+        startIso: "2026-06-03T00:00:00.000Z",
+        endIso: "2026-06-04T00:00:00.000Z",
+        granularityMinutes: 60
+      }
+    });
+    expect(createB.status).toBe(201);
+    const eventB = (await createB.json()) as { token: string };
+
+    const cookieAValue = eventA.cookie.split("=")[1];
+    const cookieB = parseCookie(createB);
+    expect(cookieB).toBeTruthy();
+    const cookieBValue = (cookieB as string).split("=")[1];
+
+    const combinedCookie = `${eventA.cookie}; ${cookieB as string}`;
+
+    const writeA = await apiRequest({
+      env,
+      path: `/api/events/${eventA.token}/availability`,
+      method: "PATCH",
+      cookie: combinedCookie,
+      body: { select: [2], deselect: [] }
+    });
+    expect(writeA.status).toBe(200);
+
+    const writeB = await apiRequest({
+      env,
+      path: `/api/events/${eventB.token}/availability`,
+      method: "PATCH",
+      cookie: combinedCookie,
+      body: { select: [3], deselect: [] }
+    });
+    expect(writeB.status).toBe(200);
+
+    const backToA = await apiRequest({
+      env,
+      path: `/api/events/${eventA.token}/grid`,
+      cookie: combinedCookie
+    });
+    expect(backToA.status).toBe(200);
+    const backToAPayload = (await backToA.json()) as { n: number; mine: number[] };
+    expect(backToAPayload.n).toBe(1);
+    expect(backToAPayload.mine).toEqual([2]);
+
+    const backToB = await apiRequest({
+      env,
+      path: `/api/events/${eventB.token}/grid`,
+      cookie: combinedCookie
+    });
+    expect(backToB.status).toBe(200);
+    const backToBPayload = (await backToB.json()) as { n: number; mine: number[] };
+    expect(backToBPayload.n).toBe(1);
+    expect(backToBPayload.mine).toEqual([3]);
+
+    expect(cookieAValue).toBeTruthy();
+    expect(cookieBValue).toBeTruthy();
+    expect(cookieAValue).not.toBe(cookieBValue);
   });
 
   it("returns 404 for unknown event token", async () => {

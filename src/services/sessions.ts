@@ -3,7 +3,7 @@ import type { Context } from "hono";
 import { generateParticipantId } from "../lib/tokens";
 import type { Env } from "../app";
 
-const SESSION_COOKIE = "v2m_session";
+const SESSION_COOKIE_PREFIX = "v2m_session_";
 
 type ParticipantRow = {
   id: string;
@@ -20,8 +20,16 @@ function isSecureRequest(c: Context<Env>): boolean {
   return c.req.url.startsWith("https://");
 }
 
-async function setSessionCookie(c: Context<Env>, participantId: string): Promise<void> {
-  await setSignedCookie(c, SESSION_COOKIE, participantId, c.env.SESSION_SECRET, {
+function sessionCookieNameForEvent(eventId: number): string {
+  return `${SESSION_COOKIE_PREFIX}${eventId}`;
+}
+
+async function setEventSessionCookie(
+  c: Context<Env>,
+  eventId: number,
+  participantId: string
+): Promise<void> {
+  await setSignedCookie(c, sessionCookieNameForEvent(eventId), participantId, c.env.SESSION_SECRET, {
     ...baseCookieOptions,
     secure: isSecureRequest(c)
   });
@@ -46,9 +54,16 @@ export async function createParticipant(db: D1Database, eventId: number): Promis
 
 export async function issueSessionForParticipant(
   c: Context<Env>,
+  eventId: number,
   participantId: string
 ): Promise<void> {
-  await setSessionCookie(c, participantId);
+  await setEventSessionCookie(c, eventId, participantId);
+}
+
+async function createAndIssueSession(c: Context<Env>, eventId: number): Promise<string> {
+  const participantId = await createParticipant(c.env.DB, eventId);
+  await setEventSessionCookie(c, eventId, participantId);
+  return participantId;
 }
 
 export async function ensureEventSession(
@@ -56,15 +71,18 @@ export async function ensureEventSession(
   eventId: number,
   options: { allowCreate: boolean }
 ): Promise<{ ok: true; participantId: string } | { ok: false; reason: "missing" | "invalid" | "cross_event" }> {
-  const cookieParticipantId = await getSignedCookie(c, c.env.SESSION_SECRET, SESSION_COOKIE);
+  const cookieParticipantId = await getSignedCookie(
+    c,
+    c.env.SESSION_SECRET,
+    sessionCookieNameForEvent(eventId)
+  );
 
   if (!cookieParticipantId) {
     if (!options.allowCreate) {
       return { ok: false, reason: "missing" };
     }
 
-    const participantId = await createParticipant(c.env.DB, eventId);
-    await setSessionCookie(c, participantId);
+    const participantId = await createAndIssueSession(c, eventId);
     return { ok: true, participantId };
   }
 
@@ -74,8 +92,7 @@ export async function ensureEventSession(
       return { ok: false, reason: "invalid" };
     }
 
-    const participantId = await createParticipant(c.env.DB, eventId);
-    await setSessionCookie(c, participantId);
+    const participantId = await createAndIssueSession(c, eventId);
     return { ok: true, participantId };
   }
 
@@ -84,8 +101,7 @@ export async function ensureEventSession(
       return { ok: false, reason: "cross_event" };
     }
 
-    const participantId = await createParticipant(c.env.DB, eventId);
-    await setSessionCookie(c, participantId);
+    const participantId = await createAndIssueSession(c, eventId);
     return { ok: true, participantId };
   }
 

@@ -135,6 +135,51 @@ describe("availability sync", () => {
     });
   });
 
+  it("supports multi-chunk deselect path", async () => {
+    const env = buildEnv();
+    const { token, cookie } = await createEvent(env);
+    const slots = Array.from({ length: 30 }, (_, i) => i + 10);
+
+    const write = await apiRequest({
+      env,
+      path: `/api/events/${token}/availability`,
+      method: "PATCH",
+      cookie,
+      body: { select: slots, deselect: [] }
+    });
+    expect(write.status).toBe(200);
+
+    const clear = await apiRequest({
+      env,
+      path: `/api/events/${token}/availability`,
+      method: "PATCH",
+      cookie,
+      body: { select: [], deselect: slots }
+    });
+    expect(clear.status).toBe(200);
+
+    const grid = await apiRequest({
+      env,
+      path: `/api/events/${token}/grid`,
+      cookie
+    });
+    await expect(grid.json()).resolves.toMatchObject({
+      n: 0,
+      slots: []
+    });
+  });
+
+  it("enforces fake d1 parameter limit when a batch exceeds max binds", async () => {
+    const db = new FakeD1Database();
+    const overLimitStatements = Array.from({ length: 34 }, (_, idx) =>
+      db
+        .prepare("INSERT OR IGNORE INTO availability (event_id, participant_id, slot_index) VALUES (?, ?, ?)")
+        .bind(1, "p1", idx)
+    );
+
+    await expect(db.batch(overLimitStatements)).rejects.toThrow("Fake D1 parameter limit exceeded");
+  });
+
   it("does not double count duplicate slot selects from one participant", async () => {
     const env = buildEnv();
     const { token, cookie } = await createEvent(env);

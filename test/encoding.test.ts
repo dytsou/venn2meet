@@ -72,4 +72,34 @@ describe("encoding", () => {
       myTime: false
     });
   });
+
+  it("does not mark only-missing-me when n is one", () => {
+    expect(
+      classifyHeatmapCell({
+        n: 1,
+        count: 0,
+        mine: false
+      })
+    ).toEqual({
+      perfect: false,
+      nearPerfect: false,
+      onlyMissingMe: false,
+      myTime: false
+    });
+  });
+
+  it("does not mark near-perfect when n is one", () => {
+    expect(
+      classifyHeatmapCell({
+        n: 1,
+        count: 0,
+        mine: true
+      })
+    ).toEqual({
+      perfect: false,
+      nearPerfect: false,
+      onlyMissingMe: false,
+      myTime: true
+    });
+  });
 });

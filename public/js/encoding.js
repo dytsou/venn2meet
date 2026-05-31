@@ -13,8 +13,9 @@ export function classifyHeatmapCell(input) {
   }
 
   const perfect = mine && count === n;
-  const nearPerfect = mine && count === n - 1;
-  const onlyMissingMe = !mine && count === n - 1;
+  const hasNearPerfectWindow = n >= 2;
+  const nearPerfect = hasNearPerfectWindow && mine && count === n - 1;
+  const onlyMissingMe = hasNearPerfectWindow && !mine && count === n - 1;
 
   return {
     perfect,

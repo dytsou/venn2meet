@@ -50,7 +50,7 @@ export async function createEventRoute(c: Context<Env>) {
   }
 
   const participantId = await createParticipant(c.env.DB, event.id);
-  await issueSessionForParticipant(c, participantId);
+  await issueSessionForParticipant(c, event.id, participantId);
 
   return c.json(
     {
