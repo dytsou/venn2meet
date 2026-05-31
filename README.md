@@ -2,6 +2,8 @@
 
 Anonymous overlap scheduling built on Cloudflare Workers + D1.
 
+Production: [venn2meet.tsou.me](https://venn2meet.tsou.me)
+
 ## Product behavior
 
 - Event link join is anonymous and server-session based.
@@ -45,7 +47,7 @@ Cloudflare supplies the build API token automatically. Wrangler reads `D1_DATABA
 
 Set `SESSION_SECRET` under the Worker's **Settings → Variables & Secrets** (runtime secret, not a build variable).
 
-GitHub Actions (`.github/workflows/deploy.yml`) runs tests only. Deployments are handled by Workers Builds on push to `main`.
+GitHub Actions (`.github/workflows/ci.yml`) runs tests only. Deployments are handled by Workers Builds on push to `main`.
 
 ## Required secrets
 
