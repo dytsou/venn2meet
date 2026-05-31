@@ -14,8 +14,10 @@ Production: [venn2meet.tsou.me](https://venn2meet.tsou.me)
 ## Local development
 
 1. Install dependencies: `pnpm install`
-2. Start dev server: `pnpm dev`
-3. Run tests: `pnpm test`
+2. Create local env: `pnpm setup:env` (copies `.env.example` → `.env` and generates `SESSION_SECRET`)
+3. Fill in `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, and `D1_DATABASE_ID` in `.env`
+4. Start dev server: `pnpm dev`
+5. Run tests: `pnpm test`
 
 ## Deploy
 
