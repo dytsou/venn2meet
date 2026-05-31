@@ -8,6 +8,7 @@
     "dev": "wrangler dev",
     "deploy": "node scripts/wrangler-with-env.mjs deploy",
     "db:migrate": "node scripts/wrangler-with-env.mjs d1 migrations apply venn2meet --remote",
+    "release": "pnpm db:migrate && pnpm deploy",
     "test": "vitest run",
     "test:watch": "vitest"
   },

@@ -26,13 +26,32 @@ Anonymous overlap scheduling built on Cloudflare Workers + D1.
 3. Deploy Worker:
    `pnpm deploy`
 
+## Cloudflare Workers Builds
+
+If you connect the Git repo in the Cloudflare dashboard, use these settings:
+
+| Setting           | Value          |
+| ----------------- | -------------- |
+| Build command     | `pnpm test`    |
+| Deploy command    | `pnpm release` |
+| Root directory    | `/`            |
+| Production branch | `main`         |
+
+Under **Build variables and secrets**, add:
+
+- `D1_DATABASE_ID` — your remote D1 database UUID
+
+Cloudflare supplies the build API token automatically. Wrangler reads `D1_DATABASE_ID` during `pnpm release` to inject the D1 binding and apply migrations before deploy.
+
+Set `SESSION_SECRET` under the Worker's **Settings → Variables & Secrets** (runtime secret, not a build variable).
+
+GitHub Actions (`.github/workflows/deploy.yml`) runs tests only. Deployments are handled by Workers Builds on push to `main`.
+
 ## Required secrets
 
 - `SESSION_SECRET` (Wrangler secret) used to sign participant session cookies.
 - `.env` — local Wrangler auth and D1 binding (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `D1_DATABASE_ID`); gitignored.
-- GitHub Actions deployment workflow secrets:
-  - `CLOUDFLARE_API_TOKEN`
-  - `CLOUDFLARE_ACCOUNT_ID`
+- Cloudflare Workers Builds build variable:
   - `D1_DATABASE_ID`
 
 ## Validation
