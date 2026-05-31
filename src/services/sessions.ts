@@ -1,6 +1,7 @@
 import { getSignedCookie, setSignedCookie } from "hono/cookie";
 import type { Context } from "hono";
 import { generateParticipantId } from "../lib/tokens";
+import { requireSessionSecret } from "../lib/config";
 import type { Env } from "../app";
 
 const SESSION_COOKIE_PREFIX = "v2m_session_";
@@ -14,7 +15,7 @@ const baseCookieOptions = {
   httpOnly: true,
   secure: true,
   sameSite: "Lax" as const,
-  path: "/"
+  path: "/",
 };
 
 function sessionCookieNameForEvent(eventId: number): string {
@@ -24,14 +25,28 @@ function sessionCookieNameForEvent(eventId: number): string {
 async function setEventSessionCookie(
   c: Context<Env>,
   eventId: number,
-  participantId: string
+  participantId: string,
 ): Promise<void> {
-  await setSignedCookie(c, sessionCookieNameForEvent(eventId), participantId, c.env.SESSION_SECRET, {
-    ...baseCookieOptions
-  });
+  const secret = requireSessionSecret(c);
+  if (secret instanceof Response) {
+    throw new Error("SESSION_SECRET is not configured");
+  }
+
+  await setSignedCookie(
+    c,
+    sessionCookieNameForEvent(eventId),
+    participantId,
+    secret,
+    {
+      ...baseCookieOptions,
+    },
+  );
 }
 
-async function getParticipantById(db: D1Database, participantId: string): Promise<ParticipantRow | null> {
+async function getParticipantById(
+  db: D1Database,
+  participantId: string,
+): Promise<ParticipantRow | null> {
   const row = await db
     .prepare("SELECT id, event_id FROM participants WHERE id = ?")
     .bind(participantId)
@@ -39,10 +54,15 @@ async function getParticipantById(db: D1Database, participantId: string): Promis
   return row ?? null;
 }
 
-export async function createParticipant(db: D1Database, eventId: number): Promise<string> {
+export async function createParticipant(
+  db: D1Database,
+  eventId: number,
+): Promise<string> {
   const participantId = generateParticipantId();
   await db
-    .prepare("INSERT INTO participants (id, event_id, has_synced) VALUES (?, ?, 0)")
+    .prepare(
+      "INSERT INTO participants (id, event_id, has_synced) VALUES (?, ?, 0)",
+    )
     .bind(participantId, eventId)
     .run();
   return participantId;
@@ -51,12 +71,15 @@ export async function createParticipant(db: D1Database, eventId: number): Promis
 export async function issueSessionForParticipant(
   c: Context<Env>,
   eventId: number,
-  participantId: string
+  participantId: string,
 ): Promise<void> {
   await setEventSessionCookie(c, eventId, participantId);
 }
 
-async function createAndIssueSession(c: Context<Env>, eventId: number): Promise<string> {
+async function createAndIssueSession(
+  c: Context<Env>,
+  eventId: number,
+): Promise<string> {
   const participantId = await createParticipant(c.env.DB, eventId);
   await setEventSessionCookie(c, eventId, participantId);
   return participantId;
@@ -65,12 +88,23 @@ async function createAndIssueSession(c: Context<Env>, eventId: number): Promise<
 export async function ensureEventSession(
   c: Context<Env>,
   eventId: number,
-  options: { allowCreate: boolean }
-): Promise<{ ok: true; participantId: string } | { ok: false; reason: "missing" | "invalid" | "cross_event" }> {
+  options: { allowCreate: boolean },
+): Promise<
+  | { ok: true; participantId: string }
+  | {
+      ok: false;
+      reason: "missing" | "invalid" | "cross_event" | "misconfigured";
+    }
+> {
+  const secret = requireSessionSecret(c);
+  if (secret instanceof Response) {
+    return { ok: false, reason: "misconfigured" };
+  }
+
   const cookieParticipantId = await getSignedCookie(
     c,
-    c.env.SESSION_SECRET,
-    sessionCookieNameForEvent(eventId)
+    secret,
+    sessionCookieNameForEvent(eventId),
   );
 
   if (!cookieParticipantId) {

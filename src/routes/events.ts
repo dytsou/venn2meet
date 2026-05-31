@@ -2,7 +2,11 @@ import type { Context } from "hono";
 import type { Env } from "../app";
 import { enforceRateLimit, limitFor } from "../middleware/rate-limit";
 import { createEvent } from "../services/events";
-import { createParticipant, issueSessionForParticipant } from "../services/sessions";
+import { requireSessionSecret } from "../lib/config";
+import {
+  createParticipant,
+  issueSessionForParticipant,
+} from "../services/sessions";
 
 type CreateEventBody = {
   title?: string;
@@ -17,7 +21,9 @@ function badRequest(c: Context<Env>, message: string) {
 }
 
 export async function createEventRoute(c: Context<Env>) {
-  if (!enforceRateLimit(c, { bucket: "create", limit: limitFor(c, "CREATE") })) {
+  if (
+    !enforceRateLimit(c, { bucket: "create", limit: limitFor(c, "CREATE") })
+  ) {
     return c.json({ error: "Rate limit exceeded" }, 429);
   }
 
@@ -32,8 +38,19 @@ export async function createEventRoute(c: Context<Env>) {
   const endIso = body.endIso;
   const granularityMinutes = body.granularityMinutes;
 
-  if (!title || !timezone || !startIso || !endIso || !Number.isInteger(granularityMinutes)) {
+  if (
+    !title ||
+    !timezone ||
+    !startIso ||
+    !endIso ||
+    !Number.isInteger(granularityMinutes)
+  ) {
     return badRequest(c, "Missing required event fields");
+  }
+
+  const secretCheck = requireSessionSecret(c);
+  if (secretCheck instanceof Response) {
+    return secretCheck;
   }
 
   let event;
@@ -43,7 +60,7 @@ export async function createEventRoute(c: Context<Env>) {
       timezone,
       startIso,
       endIso,
-      granularityMinutes: Number(granularityMinutes)
+      granularityMinutes: Number(granularityMinutes),
     });
   } catch (error) {
     return badRequest(c, (error as Error).message);
@@ -56,8 +73,8 @@ export async function createEventRoute(c: Context<Env>) {
     {
       url: `/e/${event.publicToken}`,
       token: event.publicToken,
-      slotCount: event.slotCount
+      slotCount: event.slotCount,
     },
-    201
+    201,
   );
 }

@@ -20,7 +20,7 @@ function buildEnv(overrides: Partial<TestEnv> = {}): TestEnv {
     CREATE_RATE_LIMIT: 10,
     JOIN_RATE_LIMIT: 50,
     WRITE_RATE_LIMIT: 30,
-    ...overrides
+    ...overrides,
   };
 }
 
@@ -42,7 +42,7 @@ async function apiRequest(args: {
   const request = new Request(`http://localhost${args.path}`, {
     method: args.method ?? "GET",
     headers,
-    body: args.body === undefined ? undefined : JSON.stringify(args.body)
+    body: args.body === undefined ? undefined : JSON.stringify(args.body),
   });
 
   return app.request(request, undefined, args.env as never);
@@ -60,7 +60,9 @@ function parseSetCookieRaw(response: Response): string {
   return response.headers.get("set-cookie") ?? "";
 }
 
-async function createEvent(env: TestEnv): Promise<{ token: string; cookie: string }> {
+async function createEvent(
+  env: TestEnv,
+): Promise<{ token: string; cookie: string }> {
   const response = await apiRequest({
     env,
     path: "/api/events",
@@ -70,12 +72,16 @@ async function createEvent(env: TestEnv): Promise<{ token: string; cookie: strin
       timezone: "UTC",
       startIso: "2026-06-01T00:00:00.000Z",
       endIso: "2026-06-02T00:00:00.000Z",
-      granularityMinutes: 60
-    }
+      granularityMinutes: 60,
+    },
   });
 
   expect(response.status).toBe(201);
-  const body = (await response.json()) as { token: string; url: string; slotCount: number };
+  const body = (await response.json()) as {
+    token: string;
+    url: string;
+    slotCount: number;
+  };
   const cookie = parseCookie(response);
   expect(cookie).toBeTruthy();
   expect(body.slotCount).toBe(24);
@@ -84,6 +90,26 @@ async function createEvent(env: TestEnv): Promise<{ token: string; cookie: strin
 }
 
 describe("api", () => {
+  it("returns 503 when SESSION_SECRET is missing", async () => {
+    const env = buildEnv({ SESSION_SECRET: undefined as unknown as string });
+    const response = await apiRequest({
+      env,
+      path: "/api/events",
+      method: "POST",
+      body: {
+        title: "Missing Secret Event",
+        timezone: "UTC",
+        startIso: "2026-06-01T00:00:00.000Z",
+        endIso: "2026-06-02T00:00:00.000Z",
+        granularityMinutes: 60,
+      },
+    });
+
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toContain("SESSION_SECRET");
+  });
+
   it("issues secure session cookies", async () => {
     const env = buildEnv();
     const response = await apiRequest({
@@ -95,8 +121,8 @@ describe("api", () => {
         timezone: "UTC",
         startIso: "2026-06-01T00:00:00.000Z",
         endIso: "2026-06-02T00:00:00.000Z",
-        granularityMinutes: 60
-      }
+        granularityMinutes: 60,
+      },
     });
 
     expect(response.status).toBe(201);
@@ -113,14 +139,14 @@ describe("api", () => {
     const gridResponse = await apiRequest({
       env,
       path: `/api/events/${token}/grid`,
-      cookie
+      cookie,
     });
 
     expect(gridResponse.status).toBe(200);
     await expect(gridResponse.json()).resolves.toEqual({
       n: 0,
       slots: [],
-      mine: []
+      mine: [],
     });
   });
 
@@ -131,7 +157,7 @@ describe("api", () => {
     const gridResponse = await apiRequest({
       env,
       path: `/api/events/${token}/grid`,
-      cookie
+      cookie,
     });
 
     const payload = (await gridResponse.json()) as Record<string, unknown>;
@@ -149,19 +175,28 @@ describe("api", () => {
       path: `/api/events/${token}/availability`,
       method: "PATCH",
       cookie,
-      body: { select: [1], deselect: [] }
+      body: { select: [1], deselect: [] },
     });
     expect(write.status).toBe(200);
 
     const populatedGridResponse = await apiRequest({
       env,
       path: `/api/events/${token}/grid`,
-      cookie
+      cookie,
     });
-    const populatedPayload = (await populatedGridResponse.json()) as Record<string, unknown>;
-    expect(Object.keys(populatedPayload).sort()).toEqual(["mine", "n", "slots"]);
+    const populatedPayload = (await populatedGridResponse.json()) as Record<
+      string,
+      unknown
+    >;
+    expect(Object.keys(populatedPayload).sort()).toEqual([
+      "mine",
+      "n",
+      "slots",
+    ]);
 
-    for (const slot of populatedPayload.slots as Array<Record<string, unknown>>) {
+    for (const slot of populatedPayload.slots as Array<
+      Record<string, unknown>
+    >) {
       expect(Object.keys(slot).sort()).toEqual(["count", "i"]);
     }
   });
@@ -173,7 +208,7 @@ describe("api", () => {
     const joinA = await apiRequest({
       env,
       path: `/api/events/${eventA.token}/grid`,
-      cookie: eventA.cookie
+      cookie: eventA.cookie,
     });
     expect(joinA.status).toBe(200);
 
@@ -187,8 +222,8 @@ describe("api", () => {
         timezone: "UTC",
         startIso: "2026-06-03T00:00:00.000Z",
         endIso: "2026-06-04T00:00:00.000Z",
-        granularityMinutes: 60
-      }
+        granularityMinutes: 60,
+      },
     });
     expect(createB.status).toBe(201);
     const eventB = (await createB.json()) as { token: string };
@@ -205,7 +240,7 @@ describe("api", () => {
       path: `/api/events/${eventA.token}/availability`,
       method: "PATCH",
       cookie: combinedCookie,
-      body: { select: [2], deselect: [] }
+      body: { select: [2], deselect: [] },
     });
     expect(writeA.status).toBe(200);
 
@@ -214,27 +249,33 @@ describe("api", () => {
       path: `/api/events/${eventB.token}/availability`,
       method: "PATCH",
       cookie: combinedCookie,
-      body: { select: [3], deselect: [] }
+      body: { select: [3], deselect: [] },
     });
     expect(writeB.status).toBe(200);
 
     const backToA = await apiRequest({
       env,
       path: `/api/events/${eventA.token}/grid`,
-      cookie: combinedCookie
+      cookie: combinedCookie,
     });
     expect(backToA.status).toBe(200);
-    const backToAPayload = (await backToA.json()) as { n: number; mine: number[] };
+    const backToAPayload = (await backToA.json()) as {
+      n: number;
+      mine: number[];
+    };
     expect(backToAPayload.n).toBe(1);
     expect(backToAPayload.mine).toEqual([2]);
 
     const backToB = await apiRequest({
       env,
       path: `/api/events/${eventB.token}/grid`,
-      cookie: combinedCookie
+      cookie: combinedCookie,
     });
     expect(backToB.status).toBe(200);
-    const backToBPayload = (await backToB.json()) as { n: number; mine: number[] };
+    const backToBPayload = (await backToB.json()) as {
+      n: number;
+      mine: number[];
+    };
     expect(backToBPayload.n).toBe(1);
     expect(backToBPayload.mine).toEqual([3]);
 
@@ -257,18 +298,18 @@ describe("api", () => {
       path: `/api/events/${eventB.token}/availability`,
       method: "PATCH",
       cookie: forgedCookie,
-      body: { select: [5], deselect: [] }
+      body: { select: [5], deselect: [] },
     });
     expect(replayWrite.status).toBe(401);
 
     const validGrid = await apiRequest({
       env,
       path: `/api/events/${eventB.token}/grid`,
-      cookie: eventB.cookie
+      cookie: eventB.cookie,
     });
     await expect(validGrid.json()).resolves.toMatchObject({
       n: 0,
-      slots: []
+      slots: [],
     });
   });
 
@@ -276,7 +317,7 @@ describe("api", () => {
     const env = buildEnv();
     const response = await apiRequest({
       env,
-      path: "/api/events/not-real-token/grid"
+      path: "/api/events/not-real-token/grid",
     });
 
     expect(response.status).toBe(404);
@@ -292,8 +333,8 @@ describe("api", () => {
       method: "PATCH",
       body: {
         select: [1],
-        deselect: []
-      }
+        deselect: [],
+      },
     });
 
     expect(response.status).toBe(401);
@@ -305,13 +346,13 @@ describe("api", () => {
 
     const first = await apiRequest({
       env,
-      path: `/api/events/${token}/grid`
+      path: `/api/events/${token}/grid`,
     });
     expect(first.status).toBe(200);
 
     const second = await apiRequest({
       env,
-      path: `/api/events/${token}/grid`
+      path: `/api/events/${token}/grid`,
     });
     expect(second.status).toBe(429);
   });
@@ -325,13 +366,13 @@ describe("api", () => {
       path: `/api/events/${token}/availability`,
       method: "PATCH",
       cookie: cookieA,
-      body: { select: [1], deselect: [] }
+      body: { select: [1], deselect: [] },
     });
     expect(writeA.status).toBe(200);
 
     const joinB = await apiRequest({
       env,
-      path: `/api/events/${token}/grid`
+      path: `/api/events/${token}/grid`,
     });
     expect(joinB.status).toBe(200);
     const cookieB = parseCookie(joinB);
@@ -342,14 +383,14 @@ describe("api", () => {
       path: `/api/events/${token}/availability`,
       method: "PATCH",
       cookie: cookieB as string,
-      body: { select: [1], deselect: [] }
+      body: { select: [1], deselect: [] },
     });
     expect(writeB.status).toBe(200);
 
     const gridA = await apiRequest({
       env,
       path: `/api/events/${token}/grid`,
-      cookie: cookieA
+      cookie: cookieA,
     });
 
     const payload = (await gridA.json()) as {
