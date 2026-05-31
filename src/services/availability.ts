@@ -17,9 +17,9 @@ export function validateAvailabilityDiff(input: AvailabilityDiffInput): {
   deselect: number[];
 } {
   const { select, deselect, slotCount } = input;
-  const seen = new Set<number>();
 
   const normalize = (slots: number[]): number[] => {
+    const seen = new Set<number>();
     const clean: number[] = [];
     for (const slot of slots) {
       assertSlotIndexInRange(slot, slotCount);
@@ -34,6 +34,12 @@ export function validateAvailabilityDiff(input: AvailabilityDiffInput): {
 
   const normalizedSelect = normalize(select);
   const normalizedDeselect = normalize(deselect);
+
+  const selectSet = new Set(normalizedSelect);
+  const hasOverlap = normalizedDeselect.some((slot) => selectSet.has(slot));
+  if (hasOverlap) {
+    throw new Error("select and deselect cannot include the same slot");
+  }
 
   return {
     select: normalizedSelect,

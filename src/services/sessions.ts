@@ -12,13 +12,10 @@ type ParticipantRow = {
 
 const baseCookieOptions = {
   httpOnly: true,
+  secure: true,
   sameSite: "Lax" as const,
   path: "/"
 };
-
-function isSecureRequest(c: Context<Env>): boolean {
-  return c.req.url.startsWith("https://");
-}
 
 function sessionCookieNameForEvent(eventId: number): string {
   return `${SESSION_COOKIE_PREFIX}${eventId}`;
@@ -30,8 +27,7 @@ async function setEventSessionCookie(
   participantId: string
 ): Promise<void> {
   await setSignedCookie(c, sessionCookieNameForEvent(eventId), participantId, c.env.SESSION_SECRET, {
-    ...baseCookieOptions,
-    secure: isSecureRequest(c)
+    ...baseCookieOptions
   });
 }
 

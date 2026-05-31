@@ -102,4 +102,17 @@ describe("encoding", () => {
       myTime: true
     });
   });
+
+  it("does not mark near-perfect when n is one and mine true", () => {
+    expect(
+      classifyHeatmapCell({
+        n: 1,
+        count: 0,
+        mine: true
+      })
+    ).toMatchObject({
+      nearPerfect: false,
+      myTime: true
+    });
+  });
 });

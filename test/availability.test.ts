@@ -103,6 +103,24 @@ describe("availability sync", () => {
     expect(payload.slots).toHaveLength(50);
   });
 
+  it("rejects overlapping select and deselect slots", async () => {
+    const env = buildEnv();
+    const { token, cookie } = await createEvent(env);
+
+    const response = await apiRequest({
+      env,
+      path: `/api/events/${token}/availability`,
+      method: "PATCH",
+      cookie,
+      body: { select: [7], deselect: [7] }
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "select and deselect cannot include the same slot"
+    });
+  });
+
   it("drops participant out of N after deselecting all slots", async () => {
     const env = buildEnv();
     const { token, cookie } = await createEvent(env);

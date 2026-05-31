@@ -56,6 +56,10 @@ function parseCookie(response: Response): string | null {
   return raw.split(";")[0] ?? null;
 }
 
+function parseSetCookieRaw(response: Response): string {
+  return response.headers.get("set-cookie") ?? "";
+}
+
 async function createEvent(env: TestEnv): Promise<{ token: string; cookie: string }> {
   const response = await apiRequest({
     env,
@@ -80,6 +84,28 @@ async function createEvent(env: TestEnv): Promise<{ token: string; cookie: strin
 }
 
 describe("api", () => {
+  it("issues secure session cookies", async () => {
+    const env = buildEnv();
+    const response = await apiRequest({
+      env,
+      path: "/api/events",
+      method: "POST",
+      body: {
+        title: "Secure Cookie Event",
+        timezone: "UTC",
+        startIso: "2026-06-01T00:00:00.000Z",
+        endIso: "2026-06-02T00:00:00.000Z",
+        granularityMinutes: 60
+      }
+    });
+
+    expect(response.status).toBe(201);
+    const rawCookie = parseSetCookieRaw(response);
+    expect(rawCookie).toContain("Secure");
+    expect(rawCookie).toContain("HttpOnly");
+    expect(rawCookie).toContain("SameSite=Lax");
+  });
+
   it("creates an event and returns initial aggregate-only grid", async () => {
     const env = buildEnv();
     const { token, cookie } = await createEvent(env);
@@ -215,6 +241,35 @@ describe("api", () => {
     expect(cookieAValue).toBeTruthy();
     expect(cookieBValue).toBeTruthy();
     expect(cookieAValue).not.toBe(cookieBValue);
+  });
+
+  it("rejects cross-event replayed cookie values on availability writes", async () => {
+    const env = buildEnv();
+    const eventA = await createEvent(env);
+    const eventB = await createEvent(env);
+
+    const eventBCookieName = eventB.cookie.split("=")[0];
+    const eventACookieValue = eventA.cookie.split("=")[1];
+    const forgedCookie = `${eventBCookieName}=${eventACookieValue}`;
+
+    const replayWrite = await apiRequest({
+      env,
+      path: `/api/events/${eventB.token}/availability`,
+      method: "PATCH",
+      cookie: forgedCookie,
+      body: { select: [5], deselect: [] }
+    });
+    expect(replayWrite.status).toBe(401);
+
+    const validGrid = await apiRequest({
+      env,
+      path: `/api/events/${eventB.token}/grid`,
+      cookie: eventB.cookie
+    });
+    await expect(validGrid.json()).resolves.toMatchObject({
+      n: 0,
+      slots: []
+    });
   });
 
   it("returns 404 for unknown event token", async () => {
